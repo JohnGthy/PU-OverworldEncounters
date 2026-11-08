@@ -1,0 +1,45 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git python3 zip
+
+      - name: Build CTRPluginFramework
+        run: ./scripts/get_ctrpf.sh
+
+      - name: Build plugin
+        run: ./plugin/build.sh
+
+      - name: Package
+        run: |
+          mkdir -p dist/luma/plugins/00040000001B5100
+          cp plugin/build/OverworldEncounters.3gx dist/luma/plugins/00040000001B5100/
+          cp README.md CHANGELOG.md dist/
+          cd dist && zip -r ../OverworldEncounters.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OverworldEncounters
+          path: dist/
+
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OverworldEncounters.zip

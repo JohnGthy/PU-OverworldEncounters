@@ -1,0 +1,16 @@
+# build output
+plugin/build/
+dist/
+# fetched/built dependency (scripts/get_ctrpf.sh)
+plugin/libctrpf/
+.ctrpf/
+# never commit game data
+dump/
+*.cia
+*.cci
+*.3ds
+*.cxi
+code.bin
+*.cro
+*.crs
+__pycache__/
