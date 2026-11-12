@@ -1,6 +1,6 @@
 # Overworld Encounters
 
-Sword/Shield-style visible wild Pokémon in the tall grass of **Pokémon Ultra Moon**, as a 3GX
+modern-style visible wild Pokémon in the tall grass of **Pokémon Ultra Moon**, as a 3GX
 plugin for emulators with the Luma plugin loader (Azahar, Citra, Dekopon).
 
 ![Wild Pokémon in the tall grass](docs/images/screenshot_overworld.png)
