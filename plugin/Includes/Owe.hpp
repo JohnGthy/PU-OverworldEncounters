@@ -1,11 +1,15 @@
 #pragma once
 #include <3ds/types.h>
+#include <CTRPluginFramework.hpp>
 
 namespace OWE {
 
 struct Config {
     bool  enabled         = true;
     bool  debugForceSpawn = false;
+    bool  iconMode        = false;   // performance option: 2D box icons instead of 3D models
+    int   debugSpecies = 0;          // >0: every spawn is this species (testing)
+    int   debugForm = 0;
     bool  verboseLog      = false;   // detailed per-frame logging to owe_log.txt
     bool  debugNearSpawn  = false;   // testing aid: spawn right in front of the player
     bool  debugAlwaysShiny = false;  // testing aid: every spawned Pokemon is shiny
@@ -46,7 +50,9 @@ struct Config {
     int   popFrames        = 15;     // grow-in / shrink-out duration
     int   respawnDelay     = 30 * 2;
     int   maxModels        = 5;        // simultaneous Pokemon (menu: 5 or 3; also limited by memory)
-    int   perModelHeap     = 0x240000; // memory per Pokemon model (very large species may not fit)
+    int   perModelHeap     = 0x340000; // memory per Pokemon model: the game's own default for these
+                                       // models. 0x240000 (v0.5) froze the game on species with big
+                                       // models/animated textures (e.g. Alolan Grimer).
     int   systemHeap       = 0x90000;  // PokeModelSystem bookkeeping inside our heap
     int   idleReleaseFrames = 30 * 5;  // release the heap after this long with nothing spawned
 };
@@ -71,6 +77,26 @@ namespace Owe {
 }
 
 void Log(const char *fmt, ...);
+
+// Camera.cpp: field camera capture (2D icon mode).
+void Camera_Init();
+void Camera_Tick();
+void Camera_DumpForTest(float x, float y, float z);
+
+// 2D icon mode (Icons.cpp): what the overlay draws for one Pokemon.
+struct IconDraw {
+    int   slot;
+    float x, y, z, yaw;
+    float scale;       // pop-in / pop-out (0..1)
+    bool  shiny, walking;
+    int   frame;       // spawn timer, for the walk hop / shiny sparkle
+};
+int  Owe_GetIconDraws(IconDraw *out, int max);
+bool Owe_FieldActive();                       // the field ran a frame in the last ~100 ms
+bool Icons_Load(int slot, int species, int form);
+void Icons_Init();
+bool Icons_Draw(const CTRPluginFramework::Screen &screen);
+bool Camera_Project(float x, float y, float z, float &sx, float &sy, float &ppu, float vdir[3]);
 
 } // namespace OWE
 

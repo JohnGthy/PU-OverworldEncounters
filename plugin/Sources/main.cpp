@@ -76,11 +76,30 @@ int main(void) {
     u16 ver = Process::GetVersion();
     Log("OWE start tid=%016llX ver=%u", tid, ver);
 
-    PluginMenu *menu = new PluginMenu("Overworld Encounters", 0, 5, 0,
+    PluginMenu *menu = new PluginMenu("Overworld Encounters", 0, 6, 0,
         "Visible wild Pokemon in tall grass (Sword/Shield style).\n"
         "Random grass encounters are replaced by Pokemon you can see and touch.");
     menu->SynchronizeWithFrame(true);
 
+    OWE::Icons_Init();
+#ifdef OWE_TEST_OVERLAY
+    OSD::Run(OWE::Icons_Draw);
+#endif
+#ifdef OWE_TEST_AUTOBATTLE
+    Owe::Cfg().debugAutoBattle = true;
+#endif
+#ifdef OWE_TEST_ICONS
+    Owe::Cfg().iconMode = true;
+    OSD::Run(OWE::Icons_Draw);
+#endif
+#ifdef OWE_TEST_SPECIES
+    Owe::Cfg().debugSpecies = OWE_TEST_SPECIES;
+    Owe::Cfg().debugForm = OWE_TEST_FORM;
+    Owe::Cfg().verboseLog = true;
+#ifdef OWE_TEST_HEAP
+    Owe::Cfg().perModelHeap = OWE_TEST_HEAP;
+#endif
+#endif
     if (!Owe::Init(tid, ver)) {
         Log("unsupported game/version");
         OSD::Notify("Overworld Encounters: unsupported game version", Color::Red);
@@ -91,6 +110,13 @@ int main(void) {
     *menu += new MenuEntry("Overworld encounters: ON", nullptr, ToggleEnabled,
         "ON: wild Pokemon appear in tall grass and random grass encounters are disabled.\n"
         "OFF: vanilla behaviour.");
+    *menu += new MenuEntry("Pokemon display: 3D models", nullptr, [](MenuEntry *e) {
+        Owe::Cfg().iconMode = !Owe::Cfg().iconMode;
+        if (Owe::Cfg().iconMode) OSD::Run(OWE::Icons_Draw); else OSD::Stop(OWE::Icons_Draw);
+        e->Name() = Owe::Cfg().iconMode ? "Pokemon display: 2D icons (performance)" : "Pokemon display: 3D models";
+    }, "3D models: the Pokemon's own animated model.\n"
+       "2D icons: its PC box icon instead - much lighter (no models, no extra memory).\n"
+       "Needs owe_icons.bin next to the plugin.");
     *menu += new MenuEntry("Pokemon cries: ON", nullptr, [](MenuEntry *e) {
         Owe::Cfg().cries = !Owe::Cfg().cries;
         e->Name() = Owe::Cfg().cries ? "Pokemon cries: ON" : "Pokemon cries: OFF";

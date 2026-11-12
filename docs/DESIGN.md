@@ -226,3 +226,26 @@ Testing aids: `debugNearSpawn` (spawn just in front of the player), `debugAlways
 * A grass-rustle effect when a Pokemon pops out (`EffectEncGrass`).
 * Shiny sparkle in the overworld.
 * Ultra Sun and v1.0 offset tables (method in `RE_NOTES.md`).
+
+## 7. 2D icon mode (v0.6)
+
+`Config::iconMode` (menu "Pokemon display"). The spawn/wander/touch/battle logic is unchanged; only
+the presentation differs:
+
+* No TrialModel factory, no linear memory block, no model heap. `FactoryReady` returns at once,
+  `StartSpawn` creates no model and loads the icon instead; `Loading` goes straight to `Appear`.
+* Switching modes despawns everything and, coming from 3D, tears the factory down first
+  (`g_modeIcons` is the mode in effect).
+* Camera (`Camera.cpp`): `SceneRenderPath::SetCamera(DrawContext&)` (code.bin 0x33F804) is hooked.
+  Its camera (or the DrawContext) begins with a 4x4 projection and a 3x4 view matrix (0x70 bytes,
+  rows). The newest perspective one (projection row 3 = 0 0 -1 0) is the field camera. The 3DS
+  projection is rotated for the portrait LCD: screen x = 200 (1 - clip.y / w), y = 120 (1 - clip.x / w),
+  pixels per world unit = 120 |P[0][1]| / w. Checked against 3D models drawn at the same spots.
+* Icons (`Icons.cpp`): `owe_icons.bin` from romfs `a/0/6/2` (1154 LZ11 BFLIMs, 64x32 RGBA5551 stored
+  rotated as 32x64 Morton tiles). The icon for a species/form comes from the game's own lookup
+  (code.bin 0x30CC1C: species, form, sex, egg, flag). 4 KB is read from SD per spawn.
+* Drawing: CTRPF OSD callback on the top screen, only while the field runs frames (hidden in menus,
+  dialogs and battles). ~75 world units per 30 icon pixels, clamped 0.6-3x, times the pop-in/out
+  scale; nearest-neighbour; far icons first; mirrored when walking right; a hop while walking; a
+  blinking sparkle for shinies. No depth test.
+

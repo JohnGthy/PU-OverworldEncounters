@@ -99,6 +99,7 @@ static bool RollFromTable(int idx, Rolled &out) {
     out.species = slot & 0x7FF;
     u8 form = slot >> 11;
     out.form = (form >= 0x1E) ? 0 : form;
+    if (g_cfg.debugSpecies > 0) { out.species = g_cfg.debugSpecies; out.form = g_cfg.debugForm; }
     if (maxLv < minLv) maxLv = minLv;
     out.level = minLv + Rand(maxLv - minLv + 1);
     out.shiny = g_cfg.debugAlwaysShiny;
@@ -146,9 +147,13 @@ struct Spawn {
     bool   canWalk = false;          // the species' field motion pack has a walk motion
     bool   shown = false;            // made visible at least once
     float  sizeScale = 1.0f;         // per-species boost so small Pokemon stay visible
+    float  drawScale = 0.0f;         // last pop-in/out scale (icon mode draws with it)
+    bool   iconOk = false;           // icon mode: the box icon was loaded
 };
 static const int kMaxSpawns = 5;   // hard cap; Config::maxModels and memory are the runtime limits
 static Spawn g_spawns[kMaxSpawns];
+static bool  g_modeIcons = false;          // mode in effect (Config::iconMode is the request)
+static volatile u64 g_lastFieldTick = 0;  // last field frame (the icon overlay hides otherwise)
 
 // TrialModel factory bring-up (mirrors ScriptTrialModel::Update states 1-3, code.bin 0x38D44C)
 static void *g_heap = nullptr;
@@ -189,8 +194,9 @@ static void *g_ownHeap = nullptr;
 static u32 g_idleFrames = 0;
 
 static bool AllocLinear() {
-    // 12 MB = 5 Pokemon (big patches), 8 MB = 3; Old 3DS mode usually only has 4 MB free (1 Pokemon).
-    static const u32 sizes[] = {0xC00000, 0xA00000, 0x800000, 0x700000, 0x600000, 0x500000, 0x400000, 0x300000};
+    // One block for systemHeap + N Pokemon of perModelHeap (3.25 MB, the game's own size for
+    // these models): 5, 4, 3, 2 or 1 Pokemon. Old 3DS mode usually only has ~4.25 MB free (1).
+    static const u32 sizes[] = {0x1090000, 0xDA0000, 0xAA0000, 0x770000, 0x3D0000};
     Log("linear memory free: %lX", (u32)osGetMemRegionFree(MEMREGION_APPLICATION));
     for (u32 sz : sizes) {
         u32 out = 0;
@@ -232,6 +238,10 @@ static void *OwnHeap() {
 
 static bool FactoryReady(u32 fr) {
     (void)fr;
+    if (g_modeIcons) {                    // icons need no models, heap or factory
+        g_modelsFit = g_cfg.maxModels < kMaxSpawns ? g_cfg.maxModels : kMaxSpawns;
+        return true;
+    }
     if (g_facState == 2) return true;
     if (g_facState < 0 || g_facState == 3) return false;
     void *fm = Fieldmap();
@@ -302,6 +312,8 @@ static bool FactoryTeardown(u32 fr, bool force = false) {
 static void *PokeModelOf(void *trialModel) { return *(void **)((u32)trialModel + 0x20); }
 
 static void ApplyTransform(Spawn &s, float scale) {
+    s.drawScale = scale;
+    if (!s.model) return;              // icon mode: drawn by the overlay
     void *pm = PokeModelOf(s.model);
     if (!pm) return;
     float k = g_cfg.modelScale * s.sizeScale * scale;
@@ -343,6 +355,17 @@ static void ProcessDying(bool force) {
 
 static bool StartSpawn(Spawn &s, const Rolled &mon, int table, float x, float y, float z) {
     u32 fr = Owe::FieldRoBase();
+    if (g_modeIcons) {
+        s = Spawn();
+        s.iconOk = Icons_Load((int)(&s - g_spawns), mon.species, mon.form);
+        s.mon = mon; s.table = table;
+        s.x = x; s.y = y; s.z = z; s.yaw = Randf(0, 6.2831f);
+        s.state = SpawnState::Loading; s.timer = 0;
+        s.life = g_cfg.lifeMinFrames + Rand(g_cfg.lifeMaxFrames - g_cfg.lifeMinFrames + 1);
+        Log("spawn (icon%s) #%d lv%d form%d shiny%d tbl%d at %.0f %.0f %.0f", s.iconOk ? "" : " missing",
+            mon.species, mon.level, mon.form, mon.shiny, table, x, y, z);
+        return true;
+    }
     SimpleParam sp; memset(&sp, 0, sizeof(sp));
     sp.mons = mon.species; sp.form = mon.form; sp.rare = mon.shiny ? 1 : 0;
     SetupOption so; memset(&so, 0, sizeof(so));
@@ -351,6 +374,9 @@ static bool StartSpawn(Spawn &s, const Rolled &mon, int table, float x, float y,
     so.b0 = 2;   // motion pack (SetupOption+0xC): 0 battle, 1 Pokemon Refresh, 2 field (wait/walk/run)
     void *m = Call<void *>(fr + O->FR_TMF_CreateModel, g_factory, g_heap, &sp, &so);
     if (!m) { Log("CreateModel failed sp=%d", mon.species); return false; }
+#ifdef OWE_TEST_OVERLAY
+    s.iconOk = Icons_Load((int)(&s - g_spawns), mon.species, mon.form);
+#endif
     if (g_cfg.verboseLog) Log("CreateModel -> %08lX", (u32)m);
     s.model = m; s.mon = mon; s.table = table;
     s.x = x; s.y = y; s.z = z; s.yaw = Randf(0, 6.2831f);
@@ -496,7 +522,7 @@ static bool PickWalkTarget(Spawn &s, void *root, float px, float pz) {
 }
 
 static void UpdateWander(Spawn &s, void *root, float px, float pz) {
-    void *pm = PokeModelOf(s.model);
+    void *pm = s.model ? PokeModelOf(s.model) : nullptr;
     // turn smoothly towards tyaw (used by Pause "look around" and Turn)
     float d = AngleDiff(s.tyaw, s.yaw);
     if (fabsf(d) > 0.01f) s.yaw += (d > 0 ? 1 : -1) * fminf(fabsf(d), g_cfg.turnSpeed);
@@ -646,6 +672,12 @@ static u32    g_battleFrame = 0;
 // ------------------------------------------------------------------------------------------
 static void Update(void *evCheck) {
     g_frame++;
+    Camera_Tick();
+    if (g_cfg.verboseLog && g_frame % 90 == 0) {
+        for (int i = 0; i < kMaxSpawns; i++) if (g_spawns[i].state != SpawnState::Free && g_spawns[i].shown) {
+            Camera_DumpForTest(g_spawns[i].x, g_spawns[i].y, g_spawns[i].z); break;
+        }
+    }
     g_evFieldmap = *(u32 *)((u32)evCheck + 0x10);
     u32 fr = Owe::FieldRoBase();
     if (!fr) return;
@@ -655,6 +687,17 @@ static void Update(void *evCheck) {
     } else if (g_facState != 0 && g_factory) {
         void *fm = Fieldmap();
         if (!fm || *(void **)((u32)fm + 0x124) != g_factory) { Log("field rebuilt under us"); ResetAllNoFree(); }
+    }
+    g_lastFieldTick = svcGetSystemTick();
+    // Switching between 3D models and icons: remove everything of the old mode first.
+    if (g_cfg.iconMode != g_modeIcons) {
+        for (auto &s : g_spawns) Despawn(s);
+        if (g_modeIcons || FactoryTeardown(fr)) {
+            for (auto &s : g_spawns) if (!s.model) s = Spawn();
+            g_modeIcons = g_cfg.iconMode;
+            Log("display mode: %s", g_modeIcons ? "2D icons" : "3D models");
+        }
+        return;
     }
     int active = 0;
     for (auto &s : g_spawns) if (s.state != SpawnState::Free) active++;
@@ -729,7 +772,13 @@ static void Update(void *evCheck) {
         s.timer++;
         switch (s.state) {
         case SpawnState::Loading:
-            if (Call<bool>(fr + O->FR_TM_IsLoaded, s.model)) {
+            if (!s.model) {                 // icon mode: nothing to load
+                s.canWalk = g_cfg.wander; s.sizeScale = 1.0f; s.shown = true;
+                s.ws = Wander::Pause; s.wt = 20 + Rand(40); s.looks = Rand(2); s.tyaw = s.yaw;
+                ApplyTransform(s, 0.01f);
+                MaybeCry(s, sqrtf(d2), CryEvent::Appear);
+                s.state = SpawnState::Appear; s.timer = 0;
+            } else if (Call<bool>(fr + O->FR_TM_IsLoaded, s.model)) {
                 if (g_cfg.verboseLog) Log("loaded after %d frames; setup", s.timer);
                 Call<void>(fr + O->FR_TM_Setup, s.model);
                 if (g_cfg.verboseLog) Log("setup ok pm=%08lX", (u32)PokeModelOf(s.model));
@@ -744,7 +793,9 @@ static void Update(void *evCheck) {
                 if (g_cfg.verboseLog) Log("ambient ok");
                 if (void *pm = PokeModelOf(s.model)) {
                     Call<void>(O->PokeModel_ChangeAnimation, pm, kAnimWait, false);
+                    if (g_cfg.verboseLog) Log("anim ok");
                     s.canWalk = g_cfg.wander && Call<bool>(O->PokeModel_IsAvailableAnimation, pm, kAnimWalk);
+                    if (g_cfg.verboseLog) Log("walk check ok (%d)", (int)s.canWalk);
                     // Size: bounding box of the wait motion (gfl2::math::AABB = min xyzw, max xyzw).
                     float bb[8] = {0};
                     Call<void>(O->PokeModel_GetMotionCollision, pm, bb);
@@ -831,6 +882,25 @@ static void Update(void *evCheck) {
     }
 }
 
+int Owe_GetIconDraws(IconDraw *out, int max) {
+    int n = 0;
+#ifndef OWE_TEST_OVERLAY
+    if (!g_modeIcons) return 0;
+#endif
+    for (int i = 0; i < kMaxSpawns && n < max; i++) {
+        const Spawn &s = g_spawns[i];
+        if (!s.iconOk || !s.shown) continue;
+        if (s.state != SpawnState::Appear && s.state != SpawnState::Idle && s.state != SpawnState::Vanish) continue;
+        out[n++] = {i, s.x, s.y, s.z, s.yaw, s.drawScale, s.mon.shiny, s.ws == Wander::Walk, s.timer};
+    }
+    return n;
+}
+
+bool Owe_FieldActive() {
+    u64 t = g_lastFieldTick;
+    return t && svcGetSystemTick() - t < 268111856ULL / 10;   // within 100 ms
+}
+
 int g_debugStage = 1;   // 0 = hook passthrough only (bring-up), 1 = full update
 static u32 FrameHook(void *evCheck) {
     u32 r = HookContext::GetCurrent().OriginalFunction<u32>(evCheck);
@@ -915,6 +985,7 @@ bool Owe::Init(u64 tid, u16 ver) {
     g_hkSetupMons.InitializeForMitm(O->PokeSet_SetupMons, (u32)SetupMonsHook);
     g_hkSpec.InitializeForMitm(O->InitialSpec_Normalize, (u32)SpecHook);
     g_hkPhys.InitializeForMitm(O->nngxGetPhysicalAddr, (u32)PhysAddrHook);
+    Camera_Init();
     g_hkIsRare.InitializeForMitm(O->Core_IsRare, (u32)IsRareHook);
     Log("israre hook=%d", (int)g_hkIsRare.Enable());
     g_hkDispose.InitializeForMitm(O->RoManager_DisposeModule, (u32)DisposeModuleHook);

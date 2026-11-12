@@ -174,3 +174,13 @@ ORAS is Gen 6 and its engine is quite different, so plan it as a new port that r
 The other requested features (mints and bottle caps in the Poke Mart, PC gender change) come
 after this mod is finished. For USUM they would be item-data / shop-table / script edits plus
 small code hooks, and the same RE workflow applies.
+
+## 7. v0.6 additions (Ultra Moon v1.2)
+
+| What | Where |
+|---|---|
+| `SceneRenderPath::SetCamera(DrawContext const&)` | code.bin 0x33F804 (vtable+0x24 = GetCamera; camera/context = 4x4 proj + 3x4 view) |
+| Box icon index (species, form, sex, egg, flag) | code.bin 0x30CC1C (table 0x5BFD50, 16 bytes per species) |
+| Box icons | romfs `a/0/6/2`: 1154 LZ11 BFLIM, 64x32 RGBA5551, stored rotated |
+| Model heap that fits every species | 0x340000 (the game's own TrialModel default); 0x240000 froze on Alolan Grimer in `PokeModel::ChangeAnimation` |
+

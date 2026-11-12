@@ -21,10 +21,10 @@ jobs:
           apt-get install -y --no-install-recommends git python3 zip
 
       - name: Build CTRPluginFramework
-        run: ./scripts/get_ctrpf.sh
+        run: bash scripts/get_ctrpf.sh
 
       - name: Build plugin
-        run: ./plugin/build.sh
+        run: bash plugin/build.sh
 
       - name: Package
         run: |

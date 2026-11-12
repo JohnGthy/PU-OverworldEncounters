@@ -20,6 +20,7 @@ plugin for emulators with the Luma plugin loader (Azahar, Citra, Dekopon).
 * Pokémon cry now and then: when they pop out, stop or look around. Cries get quieter with distance
   and never overlap.
 * They're shown slightly larger than in battle, and tiny species get an extra boost.
+* Performance option: show them as 2D PC box icons instead of 3D models.
 
 ## Requirements
 
@@ -38,6 +39,10 @@ plugin for emulators with the Luma plugin loader (Azahar, Citra, Dekopon).
 3. Copy the `luma` folder from the zip into `sdmc`, merging folders. You should end up with
    `sdmc/luma/plugins/00040000001B5100/OverworldEncounters.3gx`.
 4. Fully restart the game. "Overworld Encounters ready" appears at the bottom of the top screen.
+5. For the 2D icon mode, put `owe_icons.bin` next to the plugin. It's made from your own game:
+   extract `romfs/a/0/6/2` (see `docs/RE_NOTES.md`) and run
+   `python3 tools/make_icons.py a/0/6/2 owe_icons.bin`. It isn't included here, since it's game
+   data.
 
 ## Menu
 
@@ -47,6 +52,7 @@ Press **Select** in game to open the plugin menu:
 |---|---|
 | Overworld encounters | On by default. Off = vanilla random encounters. |
 | Pokemon cries | On by default. |
+| Pokemon display | 3D models (default) or 2D icons: the PC box icons, much lighter (no models, no extra memory). |
 | Big grass patches | Up to 5 Pokémon (default) or up to 3, lighter on performance. |
 | Debug overlay | Internal state on the top screen. |
 | Force spawn now | Spawns a Pokémon right away if you're in grass. |
@@ -57,6 +63,8 @@ A log is written next to the plugin (`owe_log.txt`). Please attach it to bug rep
 
 * Pokémon wander slowly; they don't run away from you or chase you.
 * Small Pokémon can be partly hidden by very tall grass.
+* 2D icons are drawn on top of the picture, so they show through trees and other objects in front
+  of them, and they don't show on the right eye in 3D.
 * Battles start when you touch a Pokémon while walking (the game checks encounters on steps).
 * Water, caves and other encounter types (surfing, fishing, SOS calls) are unchanged.
 * Tested on emulators only, not on real hardware.
